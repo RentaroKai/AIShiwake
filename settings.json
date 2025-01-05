@@ -1,0 +1,24 @@
+{
+    "api_key": "",
+    "max_size": 1800,
+    "resize_enabled": false,
+    "current_template": "white_tax",
+    "prompt_templates": {
+        "white_tax": {
+            "name": "白色申告用",
+            "template": "画像から、取引年月日(yyyy/mm/ddのみ時間なし)、店舗名、商品名(要約)、合計金額(通貨記号は削除)、推測される勘定科目名を抽出しカンマ区切り(,)でreturnせよ"
+        },
+        "blue_tax": {
+            "name": "青色申告用",
+            "template": "画像から青色申告に必要な以下の情報を抽出し、カンマ区切り(,)でreturnせよ：\n1. 取引年月日(yyyy/mm/dd)\n2. 摘要\n3. 商品名(詳細)\n4. 合計金額(税抜)\n5. 消費税額\n6. 支払方法\n7. 勘定科目\n8. 取引の内容や目的"
+        },
+        "expense_report": {
+            "name": "一般経費精算",
+            "template": "画像から経費精算に必要な情報を抽出し、カンマ区切り(,)でreturnせよ"
+        },
+        "test": {
+            "name": "test",
+            "template": "なんか自分で書き換えるところ"
+        }
+    }
+}
