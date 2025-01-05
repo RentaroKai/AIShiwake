@@ -14,6 +14,7 @@ def ensure_settings_file():
             "max_size": 1800,
             "resize_enabled": True,
             "current_template": "white_tax",
+            "default_folder_path": os.path.expanduser("~\\Documents"),  # デフォルトのフォルダパス
             "prompt_templates": {
                 "white_tax": {
                     "name": "白色申告用",

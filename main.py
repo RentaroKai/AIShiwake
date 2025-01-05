@@ -1,6 +1,6 @@
 import os
 import json
-from tkinter import Tk, Label, Button, Entry, filedialog, StringVar, Frame, BooleanVar, IntVar, Checkbutton, Toplevel, ttk, messagebox, Text
+from tkinter import Tk, Label, Button, Entry, filedialog, StringVar, Frame, BooleanVar, IntVar, Checkbutton, Toplevel, ttk, messagebox, Text, Listbox
 from text_extractor import (gen_chat_response_with_gpt4, get_available_templates, 
                           get_current_template, set_template, add_template, 
                           remove_template, ensure_settings_file)
@@ -15,11 +15,13 @@ current_template_var = None
 def load_settings():
     return ensure_settings_file()
 
-def save_settings(api_key, max_size, resize_enabled):
+def save_settings(api_key, max_size, resize_enabled, default_folder_path=None):
     settings = ensure_settings_file()
     settings["api_key"] = api_key
     settings["max_size"] = max_size
     settings["resize_enabled"] = resize_enabled
+    if default_folder_path is not None:
+        settings["default_folder_path"] = default_folder_path
     with open("settings.json", "w", encoding='utf-8') as f:
         json.dump(settings, f, indent=4, ensure_ascii=False)
 
@@ -33,7 +35,9 @@ def write_to_text_file(file_path, text):
         csv_file.write(text + "\n")
 
 def select_folder(folder_entry):
-    folder_path = filedialog.askdirectory()
+    settings = load_settings()
+    initial_dir = settings.get("default_folder_path", os.path.expanduser("~\\Documents"))
+    folder_path = filedialog.askdirectory(initialdir=initial_dir)
     if folder_path:
         folder_entry.delete(0, 'end')
         folder_entry.insert(0, folder_path)
@@ -102,38 +106,124 @@ def open_template_manager(parent_window):
     """テンプレート管理画面を開く"""
     template_window = Toplevel(parent_window)
     template_window.title("テンプレート管理")
-    template_window.geometry("600x400")
+    template_window.geometry("800x500")  # 高さを600から500に調整
+    template_window.minsize(800, 500)    # 最小サイズを設定
 
     settings = load_settings()
     templates = settings.get("prompt_templates", {})
     
-    # テンプレート一覧を表示するTreeview
-    tree = ttk.Treeview(template_window, columns=("name", "template"), show="headings")
-    tree.heading("name", text="テンプレート名")
-    tree.heading("template", text="内容")
-    tree.column("name", width=150)
-    tree.column("template", width=400)
+    # メインフレーム（スクロールに対応するため）
+    main_frame = Frame(template_window)
+    main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+    
+    # 左側のフレーム（テンプレート一覧）
+    left_frame = Frame(main_frame)
+    left_frame.pack(side="left", fill="y", padx=(0, 10))
+    
+    Label(left_frame, text="テンプレート一覧").pack(side="top", anchor="w")
+    
+    # テンプレート一覧をリストボックスで表示
+    template_listbox = Listbox(left_frame, width=30, height=15)  # 高さを調整
+    template_listbox.pack(side="top", fill="both", expand=True)
     
     for key, value in templates.items():
-        tree.insert("", "end", values=(value["name"], value["template"]), tags=(key,))
+        template_listbox.insert("end", f"{value['name']} ({key})")
     
-    tree.pack(fill="both", expand=True, padx=10, pady=10)
+    # 右側のフレーム（編集エリア）
+    right_frame = Frame(main_frame)
+    right_frame.pack(side="left", fill="both", expand=True)
+    
+    # 編集フォーム
+    edit_frame = Frame(right_frame)
+    edit_frame.pack(fill="both", expand=True)
+    
+    Label(edit_frame, text="キー:").pack(anchor="w")
+    key_var = StringVar()
+    key_entry = Entry(edit_frame, textvariable=key_var, state="readonly")
+    key_entry.pack(fill="x", pady=(0, 5))  # パディングを調整
+    
+    Label(edit_frame, text="名前:").pack(anchor="w")
+    name_var = StringVar()
+    name_entry = Entry(edit_frame, textvariable=name_var)
+    name_entry.pack(fill="x", pady=(0, 5))  # パディングを調整
+    
+    Label(edit_frame, text="テンプレート:").pack(anchor="w")
+    template_text = Text(edit_frame, height=12, wrap="word")  # 高さを調整
+    template_text.pack(fill="both", expand=True, pady=(0, 10))
+    
+    # スクロールバーを追加
+    scrollbar = ttk.Scrollbar(edit_frame, orient="vertical", command=template_text.yview)
+    scrollbar.pack(side="right", fill="y")
+    template_text.config(yscrollcommand=scrollbar.set)
+    
+    def on_select(event):
+        selection = template_listbox.curselection()
+        if not selection:
+            return
+            
+        selected_text = template_listbox.get(selection[0])
+        key = selected_text.split(" (")[-1].rstrip(")")
+        
+        # 最新のsettingsを読み込む
+        settings = load_settings()
+        templates = settings.get("prompt_templates", {})
+        template = templates[key]
+        
+        key_var.set(key)
+        name_var.set(template["name"])
+        template_text.delete("1.0", "end")
+        template_text.insert("1.0", template["template"])
+        
+        # white_taxの場合は名前の編集を無効化
+        if key == "white_tax":
+            name_entry.config(state="disabled")
+            template_text.config(state="disabled")
+            update_save_button_state("disabled")
+        else:
+            name_entry.config(state="normal")
+            template_text.config(state="normal")
+            update_save_button_state("normal")
+    
+    template_listbox.bind('<<ListboxSelect>>', on_select)
+    
+    def save_template():
+        key = key_var.get()
+        if not key:
+            return
+            
+        if key == "white_tax":
+            messagebox.showerror("エラー", "デフォルトテンプレートは編集できません")
+            return
+            
+        try:
+            add_template(key, name_var.get(), template_text.get("1.0", "end-1c"))
+            messagebox.showinfo("成功", "テンプレートを保存しました")
+            
+            # リストボックスを更新
+            template_listbox.delete(0, "end")
+            settings = load_settings()
+            templates = settings.get("prompt_templates", {})
+            for k, v in templates.items():
+                template_listbox.insert("end", f"{v['name']} ({k})")
+        except ValueError as e:
+            messagebox.showerror("エラー", str(e))
     
     def add_new_template():
         dialog = Toplevel(template_window)
         dialog.title("新規テンプレート")
+        dialog.geometry("400x350")
         
         Label(dialog, text="キー（英数字）:").pack(padx=10, pady=5)
         key_var = StringVar()
-        Entry(dialog, textvariable=key_var).pack(padx=10, pady=5)
+        Entry(dialog, textvariable=key_var).pack(padx=10, pady=5, fill="x")
         
         Label(dialog, text="名前:").pack(padx=10, pady=5)
         name_var = StringVar()
-        Entry(dialog, textvariable=name_var).pack(padx=10, pady=5)
+        Entry(dialog, textvariable=name_var).pack(padx=10, pady=5, fill="x")
         
         Label(dialog, text="テンプレート:").pack(padx=10, pady=5)
-        template_var = StringVar()
-        Entry(dialog, textvariable=template_var, width=50).pack(padx=10, pady=5)
+        template_text = Text(dialog, height=10, wrap="word")
+        template_text.pack(padx=10, pady=5, fill="both", expand=True)
         
         def save():
             key = key_var.get()
@@ -141,8 +231,13 @@ def open_template_manager(parent_window):
                 messagebox.showerror("エラー", "キーは英数字のみ使用可能です")
                 return
             try:
-                add_template(key, name_var.get(), template_var.get())
-                tree.insert("", "end", values=(name_var.get(), template_var.get()), tags=(key,))
+                add_template(key, name_var.get(), template_text.get("1.0", "end-1c"))
+                # リストボックスを更新
+                template_listbox.delete(0, "end")
+                settings = load_settings()
+                templates = settings.get("prompt_templates", {})
+                for k, v in templates.items():
+                    template_listbox.insert("end", f"{v['name']} ({k})")
                 dialog.destroy()
             except ValueError as e:
                 messagebox.showerror("エラー", str(e))
@@ -150,25 +245,44 @@ def open_template_manager(parent_window):
         Button(dialog, text="保存", command=save).pack(padx=10, pady=10)
     
     def remove_selected_template():
-        selected = tree.selection()
-        if not selected:
+        selection = template_listbox.curselection()
+        if not selection:
             return
+            
+        selected_text = template_listbox.get(selection[0])
+        key = selected_text.split(" (")[-1].rstrip(")")
         
-        item = tree.item(selected[0])
-        key = tree.item(selected[0])["tags"][0]
-        
-        try:
-            remove_template(key)
-            tree.delete(selected)
-        except ValueError as e:
-            messagebox.showerror("エラー", str(e))
+        if messagebox.askyesno("確認", f"テンプレート '{selected_text}' を削除しますか？"):
+            try:
+                remove_template(key)
+                template_listbox.delete(selection)
+                # 最新のsettingsを読み込む
+                settings = load_settings()
+                templates = settings.get("prompt_templates", {})
+                # フォームをクリア
+                key_var.set("")
+                name_var.set("")
+                template_text.delete("1.0", "end")
+            except ValueError as e:
+                messagebox.showerror("エラー", str(e))
     
     # ボタンフレーム
     button_frame = Frame(template_window)
-    button_frame.pack(fill="x", padx=10, pady=10)
+    button_frame.pack(side="bottom", fill="x", padx=20, pady=10)
     
     Button(button_frame, text="新規テンプレート", command=add_new_template).pack(side="left", padx=5)
     Button(button_frame, text="削除", command=remove_selected_template).pack(side="left", padx=5)
+    save_button = Button(button_frame, text="保存", command=save_template)
+    save_button.pack(side="right", padx=5)
+    
+    # 初期状態では保存ボタンを無効化
+    save_button.config(state="disabled", bg="lightgray")
+
+    def update_save_button_state(state):
+        if state == "normal":
+            save_button.config(state=state, bg="#4CAF50", fg="white")
+        else:
+            save_button.config(state=state, bg="lightgray", fg="gray")
 
 def open_advanced_settings():
     global current_template_var, max_size_var, resize_enabled_var
@@ -187,6 +301,9 @@ def open_advanced_settings():
     current_template_var = StringVar(value=settings["current_template"])
     template_dropdown = ttk.Combobox(template_frame, textvariable=current_template_var, values=list(templates.keys()), state="readonly")
     template_dropdown.pack(side="top", fill="x", pady=5)
+
+    # デンプレート管理ボタン
+    Button(template_frame, text="テンプレート管理", command=lambda: open_template_manager(advanced_settings_window)).pack(side="top", fill="x", pady=5)
     
     # 現在のテンプレート内容を表示
     Label(advanced_settings_window, text="現在のテンプレート内容:").pack(side="top", fill="x", padx=20, pady=10)
@@ -194,7 +311,38 @@ def open_advanced_settings():
     template_content.pack(side="top", fill="both", expand=True, padx=20, pady=10)
     template_content.insert("1.0", get_current_template(settings))
     template_content.config(state="disabled")
+
+    # 最大画像サイズ
+    Label(advanced_settings_window, text="最大画像サイズ:").pack(side="top", fill="x", padx=20, pady=10)
+    max_size_var = IntVar(value=settings["max_size"])
+    Entry(advanced_settings_window, width=10, textvariable=max_size_var).pack(side="top", fill="x", padx=20, pady=10)
+
+    # リサイズ有効
+    resize_enabled_var = BooleanVar(value=settings["resize_enabled"])
+    Checkbutton(advanced_settings_window, text="リサイズ有効", variable=resize_enabled_var).pack(side="top", fill="x", padx=20, pady=10)
+
+    # デフォルトフォルダパス設定（一番下に移動）
+    folder_frame = Frame(advanced_settings_window)
+    folder_frame.pack(side="top", fill="x", padx=20, pady=10)
     
+    Label(folder_frame, text="デフォルトフォルダ:").pack(side="top", anchor="w")
+    default_folder_var = StringVar(value=settings.get("default_folder_path", os.path.expanduser("~\\Documents")))
+    folder_entry = Entry(folder_frame, textvariable=default_folder_var)
+    folder_entry.pack(side="left", fill="x", expand=True, pady=5)
+    
+    def select_default_folder():
+        folder_path = filedialog.askdirectory(initialdir=default_folder_var.get())
+        if folder_path:
+            default_folder_var.set(folder_path)
+    
+    Button(folder_frame, text="選択", command=select_default_folder).pack(side="right", padx=5)
+
+    # 保存して閉じるボタン（緑色に変更）
+    save_button = Button(advanced_settings_window, text="保存して閉じる", 
+           command=lambda: save_and_close_advanced_settings(advanced_settings_window, default_folder_var.get()))
+    save_button.configure(bg="#4CAF50", fg="white", font=("Helvetica", 10, "bold"))
+    save_button.pack(side="bottom", fill="x", padx=20, pady=10)
+
     def on_template_change(event):
         # テンプレートを変更
         set_template(template_dropdown.get())
@@ -207,24 +355,9 @@ def open_advanced_settings():
         template_content.config(state="disabled")
     
     template_dropdown.bind('<<ComboboxSelected>>', on_template_change)
-    
-    # テンプレート管理ボタン
-    Button(template_frame, text="テンプレート管理", command=lambda: open_template_manager(advanced_settings_window)).pack(side="top", fill="x", pady=5)
 
-    # 最大画像サイズ
-    Label(advanced_settings_window, text="最大画像サイズ:").pack(side="top", fill="x", padx=20, pady=10)
-    max_size_var = IntVar(value=settings["max_size"])
-    Entry(advanced_settings_window, width=10, textvariable=max_size_var).pack(side="top", fill="x", padx=20, pady=10)
-
-    # リサイズ有効
-    resize_enabled_var = BooleanVar(value=settings["resize_enabled"])
-    Checkbutton(advanced_settings_window, text="リサイズ有効", variable=resize_enabled_var).pack(side="top", fill="x", padx=20, pady=10)
-
-    Button(advanced_settings_window, text="保存して閉じる", 
-           command=lambda: save_and_close_advanced_settings(advanced_settings_window)).pack(side="bottom", fill="x", padx=20, pady=10)
-
-def save_and_close_advanced_settings(window):
-    save_settings(api_key_var.get(), max_size_var.get(), resize_enabled_var.get())
+def save_and_close_advanced_settings(window, default_folder_path):
+    save_settings(api_key_var.get(), max_size_var.get(), resize_enabled_var.get(), default_folder_path)
     window.destroy()
 
 def open_processed_folder(folder_entry):
@@ -260,7 +393,9 @@ def main():
     button_frame.pack(side="top", fill="x", padx=20, pady=(0, 10))
 
     # Start processing button
-    Button(button_frame, text="レシート一括処理開始", command=lambda: process_images(api_key_var.get(), max_size_var.get(), resize_enabled_var.get(), folder_entry, progress_var, root)).pack(side="left", expand=True, padx=5)
+    process_button = Button(button_frame, text="レシート一括処理開始", command=lambda: process_images(api_key_var.get(), max_size_var.get(), resize_enabled_var.get(), folder_entry, progress_var, root))
+    process_button.configure(bg="#4CAF50", fg="white", font=("Helvetica", 10, "bold"))  # 緑色の背景と白い文字
+    process_button.pack(side="left", expand=True, padx=5)
 
     # フォルダを開くボタン
     Button(button_frame, text="フォルダを開く", command=lambda: open_processed_folder(folder_entry)).pack(side="left", expand=True, padx=5)
