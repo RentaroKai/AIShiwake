@@ -12,7 +12,7 @@ def ensure_settings_file():
         default_settings = {
             "api_key": "",
             "max_size": 1800,
-            "resize_enabled": True,
+            "resize_enabled": False,
             "current_template": "white_tax",
             "default_folder_path": os.path.expanduser("~\\Documents"),  # デフォルトのフォルダパス
             "prompt_templates": {
