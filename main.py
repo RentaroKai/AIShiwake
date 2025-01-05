@@ -26,10 +26,15 @@ def save_settings(api_key, max_size, resize_enabled, default_folder_path=None):
         json.dump(settings, f, indent=4, ensure_ascii=False)
 
 def write_to_text_file(file_path, text):
+    # ファイルパスからディレクトリとベース名を取得
+    dir_path = os.path.dirname(file_path)
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    
+    # テキストファイルに書き込み
     with open(file_path, 'a') as file:
         file.write(text + "\n")
 
-    # CSVファイルにも書き込む
+    # CSVファイルに書き込み
     csv_file_path = os.path.splitext(file_path)[0] + '.csv'
     with open(csv_file_path, 'a') as csv_file:
         csv_file.write(text + "\n")
@@ -57,12 +62,12 @@ def process_images(api_key, max_size, resize_enabled, folder_entry, progress_var
             return
     
     valid_extensions = ['.jpg', '.jpeg', '.png']
-    output_text_file = os.path.join(folder_path, 'results.txt')
+    current_template = settings["current_template"]
+    output_text_file = os.path.join(folder_path, f'results_{current_template}.txt')
     image_files = [f for f in os.listdir(folder_path) if os.path.splitext(f)[1].lower() in valid_extensions]
     total_images = len(image_files)
     
     # 処理開始前にヘッダーを書き込む
-    current_template = settings["current_template"]
     template_name = settings["prompt_templates"][current_template]["name"]
     with open(output_text_file, 'w') as f:
         f.write(f"# テンプレート: {template_name}\n")
@@ -284,7 +289,7 @@ def open_template_manager(parent_window):
         else:
             save_button.config(state=state, bg="lightgray", fg="gray")
 
-def open_advanced_settings():
+def open_advanced_settings(template_label):
     global current_template_var, max_size_var, resize_enabled_var
     settings = load_settings()
     
@@ -353,6 +358,8 @@ def open_advanced_settings():
         template_content.delete("1.0", "end")
         template_content.insert("1.0", template)
         template_content.config(state="disabled")
+        # メイン画面のテンプレート名を更新
+        template_label.config(text=f"テンプレート：{settings['prompt_templates'][template_dropdown.get()]['name']}")
     
     template_dropdown.bind('<<ComboboxSelected>>', on_template_change)
 
@@ -373,7 +380,15 @@ def main():
     root.title("AI_レシート一括処理")
 
     # Add a button to open advanced settings, positioned at the top right
-    Button(root, text="詳細設定", command=open_advanced_settings).pack(anchor="ne", padx=20, pady=10)
+    settings_frame = Frame(root)
+    settings_frame.pack(anchor="ne", padx=20, pady=10)
+    
+    # テンプレート名を表示するラベル
+    template_label = Label(settings_frame, text=f"テンプレート：{settings['prompt_templates'][settings['current_template']]['name']}")
+    template_label.pack(side="left", padx=(0, 10))
+    
+    # 詳細設定ボタン
+    Button(settings_frame, text="詳細設定", command=lambda: open_advanced_settings(template_label)).pack(side="left")
 
     # Folder path UI
     folder_frame = Frame(root)
